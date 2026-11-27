@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flash Dostava Novi Sad — Dispečerski Centar</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- Auth Overlay -->
+  <div id="auth-overlay" class="auth-overlay">
+    <div class="auth-card">
+      <div class="brand-badge">⚡ FLASH DOSTAVA NOVI SAD</div>
+      <h1>Dispečerski Centar</h1>
+      <p>Prijavite se Google nalogom sa ovlašćenjem operatora (`admin` ili `dispatcher`) da biste pratili kurire uživo i slali porudžbine.</p>
+      <button id="btn-google-login" class="btn btn-primary btn-lg">Prijava putem Google naloga</button>
+      <div id="auth-status" class="auth-status hidden"></div>
+      <button id="btn-logout-denied" class="btn btn-secondary hidden">Odjavi se</button>
+    </div>
+  </div>
+
+  <!-- Main Dispatch Shell -->
+  <div id="app-shell" class="app-shell hidden">
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="brand-dot"></span>
+        <strong>FLASH DISPATCH</strong>
+        <span class="pill" id="realtime-pill">Realtime: povezivanje...</span>
+        <button id="unassigned-pill" type="button" class="pill pill-warn hidden" title="Prikaži nedodeljene porudžbine">⏳ Čeka dodelu: <span id="unassigned-pill-count">0</span></button>
+      </div>
+      <div class="workspace-bar-wrap" title="Blender-stil postavke radnog prostora (prevuci kartice za dokovanje ili razdvajanje)">
+        <div id="workspace-presets-bar" class="workspace-presets-bar"></div>
+        <button id="btn-save-workspace" type="button" class="btn btn-xs btn-secondary" title="Sačuvaj trenutni raspored prozora kao novu postavku">💾 Sačuvaj</button>
+      </div>
+      <div class="topbar-right">
+        <span id="operator-email" class="muted"></span>
+        <div class="layout-menu-wrap">
+          <button id="btn-layout-menu" type="button" class="btn btn-sm btn-secondary" title="Upravljanje prozorima i postavkama">🧩 Prozori</button>
+          <div id="layout-menu" class="layout-menu hidden">
+            <div class="layout-menu-title">Prozori radnog prostora</div>
+            <label class="layout-menu-item"><input type="checkbox" id="toggle-panel-couriers" checked /> <span>Kuriri</span></label>
+            <label class="layout-menu-item"><input type="checkbox" id="toggle-panel-feed" checked /> <span>Live Feed</span></label>
+            <label class="layout-menu-item"><input type="checkbox" id="toggle-panel-orderForm" checked /> <span>Nova porudžbina</span></label>
+            <label class="layout-menu-item"><input type="checkbox" id="toggle-panel-waiting" checked /> <span>⏳ Čekaju dodelu</span></label>
+            <label class="layout-menu-item"><input type="checkbox" id="toggle-panel-active" checked /> <span>📦 Aktivne porudžbine</span></label>
+            <label class="layout-menu-item"><input type="checkbox" id="toggle-panel-history" checked /> <span>📜 Istorija porudžbina</span></label>
+            <div class="layout-menu-sep"></div>
+            <div class="layout-menu-title">Elementi na mapi</div>
+            <label class="layout-menu-item"><input type="checkbox" id="toggle-overlay-eta" checked /> <span>ETA / Putanja kartica</span></label>
+            <label class="layout-menu-item"><input type="checkbox" id="toggle-overlay-legend" checked /> <span>Legenda mape</span></label>
+            <div class="layout-menu-sep"></div>
+            <div class="layout-menu-title">Postavke rasporeda (Workspaces)</div>
+            <div class="layout-menu-actions">
+              <button id="btn-workspace-save-as" type="button" class="btn btn-xs btn-secondary">💾 Sačuvaj kao novi</button>
+              <button id="btn-workspace-update" type="button" class="btn btn-xs btn-secondary">🔄 Ažuriraj aktivni</button>
+              <button id="btn-workspace-delete" type="button" class="btn btn-xs btn-secondary">🗑️ Obriši aktivni</button>
+              <button id="btn-workspace-export" type="button" class="btn btn-xs btn-secondary">⬇️ Izvezi JSON</button>
+              <button id="btn-workspace-import" type="button" class="btn btn-xs btn-secondary">⬆️ Uvezi JSON</button>
+              <input id="workspace-import-file" type="file" accept=".json" class="hidden" />
+              <button id="btn-dock-all" type="button" class="btn btn-xs btn-secondary">📌 Dokuj sve</button>
+              <button id="btn-reset-layout" type="button" class="btn btn-xs btn-secondary">↺ Podrazumevani</button>
+            </div>
+          </div>
+        </div>
+        <button id="btn-open-users" class="btn btn-sm btn-secondary hidden" title="Upravljanje korisnicima i odobrenjima">👥 Korisnici</button>
+        <button id="btn-open-debug" class="btn btn-sm btn-secondary" title="Pošalji dijagnostički log i komentar">🐞 Debug / Prijavi</button>
+        <button id="btn-refresh" class="btn btn-sm btn-secondary">Osveži</button>
+        <button id="btn-logout" class="btn btn-sm btn-secondary">Odjava</button>
+      </div>
+    </header>
+
+    <main id="bsp-workspace" class="workspace bsp-workspace"></main>
+    <div id="dock-drop-overlay" class="dock-drop-overlay hidden">
+      <div id="dock-drop-preview" class="dock-drop-preview"></div>
+      <div id="dock-drop-label" class="dock-drop-label"></div>
+    </div>
+    <div id="drag-ghost" class="drag-ghost hidden"></div>
+    <div id="floating-layer" class="floating-layer"></div>
+
+    <!-- Persistent Panel Pool (nikad se ne unistava pri dokovanju ili prelasku na tabove) -->
+    <div id="panel-pool" class="hidden">
+      <section id="panel-map" class="dock-panel" data-panel="map">
+        <div class="panel-header">
+          <h2>🗺️ Mapa uživo</h2>
+          <div class="panel-win-controls">
+            <button type="button" class="win-btn" data-win-act="float" data-panel="map" title="Plutajući prozor">↗</button>
+            <button type="button" class="win-btn" data-win-act="minimize" data-panel="map" title="Minimiziraj">—</button>
+          </div>
+        </div>
+        <div class="panel-body map-body">
+          <div id="map"></div>
+          <div id="route-eta-overlay" class="route-eta-overlay hidden"></div>
+          <div id="map-legend" class="map-legend">
+            <span><i class="dot dot-idle"></i> Slobodan</span>
+            <span><i class="dot dot-standby"></i> Na čekanju</span>
+            <span><i class="dot dot-pickup"></i> Po robu / U lokalu</span>
+            <span><i class="dot dot-delivery"></i> Ka kupcu / Kod kupca</span>
+            <span><i class="dot dot-unassigned"></i> Čeka dodelu</span>
+            <span>🖱️ Klik na mapu = Nova tačka</span>
+          </div>
+        </div>
+        <div class="panel-resize-handle" title="Promeni veličinu"></div>
+      </section>
+
+      <section id="panel-couriers" class="dock-panel" data-panel="couriers">
+        <div class="panel-header">
+          <h2>🚗 Kuriri (<span id="couriers-online-count">0</span> na mreži)</h2>
+          <div class="panel-win-controls">
+            <button type="button" class="win-btn" data-win-act="float" data-panel="couriers" title="Plutajući prozor">↗</button>
+            <button type="button" class="win-btn" data-win-act="minimize" data-panel="couriers" title="Minimiziraj">—</button>
+            <button type="button" class="win-btn close" data-win-act="close" data-panel="couriers" title="Sakrij prozor">✕</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div id="couriers-list" class="scroll-list"></div>
+        </div>
+        <div class="panel-resize-handle" title="Promeni veličinu"></div>
+      </section>
+
+      <section id="panel-feed" class="dock-panel" data-panel="feed">
+        <div class="panel-header">
+          <h2>📡 Live Feed (<span id="live-feed-count">0</span>)</h2>
+          <div class="panel-win-controls">
+            <button type="button" class="win-btn" data-win-act="float" data-panel="feed" title="Plutajući prozor">↗</button>
+            <button type="button" class="win-btn" data-win-act="minimize" data-panel="feed" title="Minimiziraj">—</button>
+            <button type="button" class="win-btn close" data-win-act="close" data-panel="feed" title="Sakrij prozor">✕</button>
+          </div>
+        </div>
+        <div class="panel-body feed-body">
+          <div class="feed-toolbar">
+            <button id="btn-feed-filter" type="button" class="btn btn-xs btn-secondary" title="Filtriraj događaje po izabranom kuriru">Svi kuriri</button>
+            <button id="btn-feed-clear" type="button" class="btn btn-xs btn-secondary" title="Obriši zapise u feed-u">Očisti</button>
+          </div>
+          <div id="live-feed-list" class="live-feed-list"></div>
+        </div>
+        <div class="panel-resize-handle" title="Promeni veličinu"></div>
+      </section>
+
+      <section id="panel-orderForm" class="dock-panel" data-panel="orderForm">
+        <div class="panel-header">
+          <h2 id="form-title">Nova porudžbina</h2>
+          <div class="panel-win-controls">
+            <button type="button" class="win-btn" data-win-act="float" data-panel="orderForm" title="Plutajući prozor">↗</button>
+            <button type="button" class="win-btn" data-win-act="minimize" data-panel="orderForm" title="Minimiziraj">—</button>
+            <button type="button" class="win-btn close" data-win-act="close" data-panel="orderForm" title="Sakrij prozor">✕</button>
+          </div>
+        </div>
+        <div class="panel-body form-body">
+          <div style="padding:8px 14px 0;display:flex;justify-content:flex-end">
+            <button id="btn-reset-form" type="button" class="btn btn-xs btn-secondary hidden">↺ Nova porudžbina (izađi iz izmene)</button>
+          </div>
+          <form id="order-form" class="order-form" autocomplete="off">
+            <input type="hidden" id="edit-order-id" />
+
+            <div class="field autocomplete-wrap">
+              <label for="pickup-input">Preuzimanje (obavezno) *</label>
+              <input id="pickup-input" type="text" placeholder="Lokal ili ulica (npr. Plava Frajla, Laze Telečkog 23)" required />
+              <div id="pickup-suggestions" class="suggestions hidden"></div>
+            </div>
+
+            <div class="field">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <label>Usputna stajanja (opciono)</label>
+                <button type="button" id="btn-add-waypoint" class="btn btn-xs btn-secondary">+ Dodaj stajanje</button>
+              </div>
+              <div id="waypoints-container" class="waypoints-list"></div>
+            </div>
+
+            <div class="field autocomplete-wrap">
+              <label for="delivery-input">Adresa dostave (opciono)</label>
+              <input id="delivery-input" type="text" placeholder="Ulica i broj kupca (kurir može dopuniti glasom)" />
+              <div id="delivery-suggestions" class="suggestions hidden"></div>
+            </div>
+
+            <div class="row-2">
+              <div class="field">
+                <label for="goods-input">Cena robe (RSD)</label>
+                <input id="goods-input" type="number" min="0" step="10" placeholder="0" />
+              </div>
+              <div class="field">
+                <label for="payment-select">Plaćanje</label>
+                <select id="payment-select">
+                  <option value="CASH">Keš (Roba + dostava)</option>
+                  <option value="DELIVERY_ONLY">Samo dostava (Roba plaćena)</option>
+                  <option value="ALL_PAID">Sve plaćeno (Račun / Online)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row-2">
+              <div class="field">
+                <label for="client-type-select">Tarifa / Klijent</label>
+                <select id="client-type-select">
+                  <option value="LEGAL_ENTITY">Lokal / Partner (140 RSD)</option>
+                  <option value="INDIVIDUAL">Privatno lice (220 RSD)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="tariff-select">Doba dana</label>
+                <select id="tariff-select">
+                  <option value="DAY">Dnevna tarifa</option>
+                  <option value="NIGHT">Noćna tarifa</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row-2">
+              <div class="field">
+                <label for="phone-input">Telefon kupca</label>
+                <input id="phone-input" type="tel" placeholder="06..." />
+              </div>
+              <div class="field">
+                <label for="courier-select">Dodeli kuriru</label>
+                <select id="courier-select">
+                  <option value="">-- Bez kurira (čeka dodelu) --</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="notes-input">Napomena za kurira</label>
+              <input id="notes-input" type="text" placeholder="Sprat, interfon, kod lokala..." />
+            </div>
+
+            <label class="checkbox-row">
+              <input id="no-auto-expire" type="checkbox" />
+              <span>Bez automatskog vraćanja (bez roka od 45 s)</span>
+            </label>
+
+            <div class="order-submit-row">
+              <button type="submit" id="btn-submit-order" class="btn btn-primary">
+                Sačuvaj kao nedodeljenu
+              </button>
+              <button type="button" id="btn-save-unassigned" class="btn btn-secondary" title="Sačuvaj porudžbinu u listu čekanja bez dodele kuriru">
+                ⏳ Čeka dodelu
+              </button>
+            </div>
+          </form>
+        </div>
+        <div class="panel-resize-handle" title="Promeni veličinu"></div>
+      </section>
+
+      <section id="panel-waiting" class="dock-panel" data-panel="waiting">
+        <div class="panel-header">
+          <h2>⏳ Čekaju (<span id="orders-unassigned-count">0</span>)</h2>
+          <div class="panel-win-controls">
+            <button type="button" class="win-btn" data-win-act="float" data-panel="waiting" title="Plutajući prozor">↗</button>
+            <button type="button" class="win-btn" data-win-act="minimize" data-panel="waiting" title="Minimiziraj">—</button>
+            <button type="button" class="win-btn close" data-win-act="close" data-panel="waiting" title="Sakrij prozor">✕</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="orders-panel-filters">
+            <div class="orders-filter-row">
+              <input id="filter-waiting-search" type="search" class="orders-filter-input" placeholder="Pretraga (#broj, firma, adresa...)" />
+              <select id="filter-waiting-source" class="orders-filter-select">
+                <option value="">Svi izvori</option>
+                <option value="company">🏢 Samo firme</option>
+                <option value="dispatcher">🎧 Samo dispečer</option>
+              </select>
+              <button id="btn-reset-waiting-filters" type="button" class="btn btn-xs btn-secondary hidden">↺</button>
+            </div>
+            <div id="waiting-filter-info" class="orders-filter-meta"></div>
+          </div>
+          <div id="orders-waiting-list" class="scroll-list"></div>
+        </div>
+        <div class="panel-resize-handle" title="Promeni veličinu"></div>
+      </section>
+
+      <section id="panel-active" class="dock-panel" data-panel="active">
+        <div class="panel-header">
+          <h2>📦 Aktivne (<span id="orders-count">0</span>)</h2>
+          <div class="panel-win-controls">
+            <button type="button" class="win-btn" data-win-act="float" data-panel="active" title="Plutajući prozor">↗</button>
+            <button type="button" class="win-btn" data-win-act="minimize" data-panel="active" title="Minimiziraj">—</button>
+            <button type="button" class="win-btn close" data-win-act="close" data-panel="active" title="Sakrij prozor">✕</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="orders-panel-filters">
+            <div class="orders-filter-row">
+              <input id="filter-active-search" type="search" class="orders-filter-input" placeholder="Pretraga (#broj, adresa, kurir...)" />
+              <select id="filter-active-source" class="orders-filter-select">
+                <option value="">Svi izvori</option>
+                <option value="company">🏢 Firme</option>
+                <option value="dispatcher">🎧 Dispečer</option>
+              </select>
+              <select id="filter-active-courier" class="orders-filter-select">
+                <option value="">Svi kuriri</option>
+              </select>
+              <button id="btn-reset-active-filters" type="button" class="btn btn-xs btn-secondary hidden">↺</button>
+            </div>
+            <div id="active-filter-info" class="orders-filter-meta"></div>
+          </div>
+          <div id="orders-active-list" class="scroll-list"></div>
+        </div>
+        <div class="panel-resize-handle" title="Promeni veličinu"></div>
+      </section>
+
+      <section id="panel-history" class="dock-panel" data-panel="history">
+        <div class="panel-header">
+          <h2>📜 Istorija (<span id="orders-history-count">0</span>)</h2>
+          <div class="panel-win-controls">
+            <button type="button" class="win-btn" data-win-act="float" data-panel="history" title="Plutajući prozor">↗</button>
+            <button type="button" class="win-btn" data-win-act="minimize" data-panel="history" title="Minimiziraj">—</button>
+            <button type="button" class="win-btn close" data-win-act="close" data-panel="history" title="Sakrij prozor">✕</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="orders-panel-filters">
+            <div class="orders-filter-row">
+              <input id="filter-history-search" type="search" class="orders-filter-input" placeholder="Pretraga (#broj, adresa, telefon...)" />
+              <select id="filter-history-source" class="orders-filter-select">
+                <option value="">Svi izvori</option>
+                <option value="company">🏢 Firme</option>
+                <option value="dispatcher">🎧 Dispečer</option>
+              </select>
+              <select id="filter-history-courier" class="orders-filter-select">
+                <option value="">Svi kuriri</option>
+              </select>
+            </div>
+            <div class="orders-filter-row">
+              <select id="filter-history-status" class="orders-filter-select">
+                <option value="">Svi statusi</option>
+                <option value="COMPLETED">✅ Završene</option>
+                <option value="CANCELLED">❌ Otkazane</option>
+              </select>
+              <select id="filter-history-date" class="orders-filter-select">
+                <option value="all">Sav period</option>
+                <option value="today">Danas</option>
+                <option value="yesterday">Juče</option>
+                <option value="7d">Poslednjih 7 dana</option>
+              </select>
+              <button id="btn-reset-history-filters" type="button" class="btn btn-xs btn-secondary hidden">↺ Reset</button>
+            </div>
+            <div id="history-filter-info" class="orders-filter-meta"></div>
+          </div>
+          <div id="orders-history-list" class="scroll-list"></div>
+        </div>
+        <div class="panel-resize-handle" title="Promeni veličinu"></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- Debug / Feedback Modal -->
+  <div id="debug-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <strong>🐞 Dispečer Debuger &amp; Prijava problema</strong>
+        <button id="btn-close-debug" class="btn btn-xs btn-secondary">Zatvori</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="debug-category">Kategorija</label>
+          <select id="debug-category">
+            <option value="DISPATCH_BUG">Problem u Dispečer panelu</option>
+            <option value="Problem sa mapom / pinovima">Problem sa mapom / pinovima</option>
+            <option value="Sinhronizacija kurira">Sinhronizacija kurira</option>
+            <option value="LOG_SYNC">LOG_SYNC (Samo pošalji log)</option>
+            <option value="Ostalo">Ostalo</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="debug-comment">Komentar / opis problema</label>
+          <textarea id="debug-comment" rows="3" placeholder="Opišite šta ste primetili (npr. kurir se ne vidi, pin pogrešan, porudžbina kasni...)"></textarea>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="debug-include-logs" checked />
+          <span>Uključi dijagnostički log (<span id="debug-log-count">0</span> zapisa)</span>
+        </label>
+        <pre id="debug-log-preview" class="log-preview"></pre>
+        <div id="debug-send-status" class="muted"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-copy-debug-log" type="button" class="btn btn-sm btn-secondary">Kopiraj log</button>
+        <button id="btn-send-debug-report" type="button" class="btn btn-sm btn-primary">Pošalji izveštaj</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Users / Approvals Modal -->
+  <div id="users-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <strong>👥 Korisnici i odobrenja</strong>
+        <div style="display:flex;gap:6px;align-items:center">
+          <a href="./company.html" target="_blank" rel="noopener" class="btn btn-xs btn-secondary" style="text-decoration:none">🏢 Portal za firme</a>
+          <button id="btn-refresh-users" type="button" class="btn btn-xs btn-secondary">Osveži</button>
+          <button id="btn-close-users" type="button" class="btn btn-xs btn-secondary">Zatvori</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="tab-group" style="margin-bottom:10px">
+          <button id="tab-users-staff" type="button" class="tab-btn active">Kuriri / Dispečeri</button>
+          <button id="tab-users-companies" type="button" class="tab-btn">🏢 Firme (<span id="companies-pending-count">0</span>)</button>
+        </div>
+        <div id="users-staff-pane">
+          <div id="users-status" class="muted"></div>
+          <div id="users-list" class="scroll-list" style="max-height:380px;padding:0"></div>
+        </div>
+        <div id="users-companies-pane" class="hidden">
+          <div id="companies-status" class="muted"></div>
+          <div id="companies-list" class="scroll-list" style="max-height:380px;padding:0"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

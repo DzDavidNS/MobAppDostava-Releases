@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flash Dostava — Portal za firme</title>
+  <link rel="stylesheet" href="./company.css" />
+</head>
+<body>
+  <!-- Google Auth Overlay -->
+  <div id="co-auth-overlay" class="auth-overlay">
+    <div class="auth-card">
+      <div class="brand-badge">⚡ Flash Dostava</div>
+      <h1>Portal za partnerske firme</h1>
+      <p>Prijavite se Google nalogom da registrujete svoju firmu, dodate filijale i šaljete porudžbine direktno dispečerskom centru.</p>
+      <button id="btn-co-google-login" type="button" class="btn btn-primary btn-lg">
+        Prijavi se preko Google naloga
+      </button>
+      <div id="co-auth-status" class="auth-status hidden"></div>
+      <div class="auth-footer-link">
+        <a href="./index.html">← Nazad na Web Dispečer</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Company Portal Shell -->
+  <div id="co-shell" class="co-shell hidden">
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="logo">⚡ Flash Dostava</span>
+        <span class="pill pill-company">Portal za firme</span>
+        <span id="co-approval-pill" class="pill pill-pending">Provera naloga...</span>
+      </div>
+      <div class="topbar-right">
+        <span id="co-user-label" class="muted"></span>
+        <button id="btn-co-branches" type="button" class="btn btn-sm btn-secondary hidden">🏢 Filijale (<span id="co-branches-count">0</span>)</button>
+        <button id="btn-co-open-debug" type="button" class="btn btn-sm btn-secondary">🐞 Prijavi problem</button>
+        <button id="btn-co-refresh" type="button" class="btn btn-sm btn-secondary">Osveži</button>
+        <button id="btn-co-logout" type="button" class="btn btn-sm btn-secondary">Odjavi se</button>
+      </div>
+    </header>
+
+    <main class="co-main">
+      <!-- 1. Onboarding / Company + Multi-branch Registration -->
+      <section id="co-onboarding" class="co-card hidden">
+        <div class="co-card-header">
+          <div>
+            <h2>Registracija partnerske firme</h2>
+            <p class="muted">Unesite podatke o firmi i dodajte jednu ili više filijala (adresa preuzimanja). Nakon registracije, administrator odobrava pristup.</p>
+          </div>
+        </div>
+        <form id="co-register-form" class="co-form">
+          <div class="grid-2">
+            <div class="field">
+              <label for="reg-company-name">Naziv firme *</label>
+              <input id="reg-company-name" type="text" placeholder="npr. Pekara Sunce DOO" required />
+            </div>
+            <div class="field">
+              <label for="reg-contact-name">Kontakt osoba</label>
+              <input id="reg-contact-name" type="text" placeholder="Ime i prezime" />
+            </div>
+            <div class="field">
+              <label for="reg-phone">Kontakt telefon firme *</label>
+              <input id="reg-phone" type="tel" placeholder="06x xxx xxxx" required />
+            </div>
+            <div class="field">
+              <label for="reg-pib">PIB (opciono)</label>
+              <input id="reg-pib" type="text" placeholder="9 cifara" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="reg-notes">Napomena za dispečera (opciono)</label>
+            <input id="reg-notes" type="text" placeholder="Radno vreme, način preuzimanja, fakturisanje..." />
+          </div>
+
+          <div class="branches-section">
+            <div class="section-row">
+              <div>
+                <strong>🏢 Filijale / lokacije preuzimanja</strong>
+                <div class="muted small">Možete dodati više adresa (lokala) vaše firme. Izaberite predloge adrese radi tačne mape.</div>
+              </div>
+              <button id="btn-reg-add-branch" type="button" class="btn btn-sm btn-secondary">+ Dodaj filijalu</button>
+            </div>
+            <div id="reg-branches-list" class="branches-builder"></div>
+          </div>
+
+          <div id="reg-status" class="form-feedback hidden"></div>
+
+          <div class="form-actions">
+            <button id="btn-reg-submit" type="submit" class="btn btn-primary btn-lg">Pošalji registraciju na odobrenje</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- 2. Waiting for Admin Approval -->
+      <section id="co-pending-banner" class="co-card hidden">
+        <div class="pending-box">
+          <div class="pending-icon">⏳</div>
+          <h2>Nalog čeka odobrenje administratora</h2>
+          <p id="co-pending-desc" class="muted">
+            Registracija vaše firme je sačuvana. Administrator Flash Dostave će uskoro odobriti pristup — stranica se automatski otključava čim odobrenje bude aktivirano.
+          </p>
+          <div id="co-pending-branches-preview" class="pending-branches"></div>
+          <div class="pending-actions">
+            <button id="btn-pending-edit-branches" type="button" class="btn btn-sm btn-secondary">🏢 Upravljaj filijalama</button>
+            <button id="btn-pending-check" type="button" class="btn btn-sm btn-primary">Proveri status sada</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Approved Company Workspace -->
+      <section id="co-workspace" class="co-workspace hidden">
+        <!-- Left Column: Order Submission Form -->
+        <div class="co-card co-order-panel">
+          <div class="co-card-header">
+            <div>
+              <h2>📦 Nova porudžbina za dostavu</h2>
+              <p class="muted small">Porudžbina stiže dispečeru kao nedodeljena i odmah dobijate potvrdu kada je kurir preuzme.</p>
+            </div>
+          </div>
+
+          <form id="co-order-form" class="co-form">
+            <div class="field">
+              <div class="label-row">
+                <label for="co-branch-select">Filijala preuzimanja *</label>
+                <button id="btn-co-manage-branches-inline" type="button" class="link-btn">+ Dodaj / uredi filijale</button>
+              </div>
+              <select id="co-branch-select" required></select>
+              <div id="co-selected-branch-info" class="branch-hint muted small"></div>
+            </div>
+
+            <div class="waypoints-block">
+              <div class="section-row">
+                <label class="small-label">Usputne stanice (opciono)</label>
+                <button id="btn-co-add-waypoint" type="button" class="btn btn-xs btn-secondary">+ Dodaj stanicu</button>
+              </div>
+              <div id="co-waypoints-container" class="waypoints-list"></div>
+            </div>
+
+            <div class="field autocomplete-field">
+              <label for="co-delivery-input">Adresa dostave (kupac) *</label>
+              <input id="co-delivery-input" type="text" placeholder="Unesite ulicu i broj u Novom Sadu..." autocomplete="off" required />
+              <div id="co-delivery-coord-hint" class="muted small">Izaberite predlog iz liste ili unesite punu adresu sa brojem.</div>
+              <div id="co-delivery-suggestions" class="suggestions hidden"></div>
+            </div>
+
+            <div class="grid-2">
+              <div class="field">
+                <label for="co-customer-phone">Telefon kupca</label>
+                <input id="co-customer-phone" type="tel" placeholder="06x xxx xxxx" />
+              </div>
+              <div class="field">
+                <label for="co-goods-cost">Otkup / cena robe (RSD)</label>
+                <input id="co-goods-cost" type="number" min="0" step="10" value="0" />
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="field">
+                <label for="co-payment-select">Način plaćanja</label>
+                <select id="co-payment-select">
+                  <option value="CASH">Keš (Roba + dostava)</option>
+                  <option value="DELIVERY_ONLY">Samo dostava (Roba plaćena)</option>
+                  <option value="ALL_PAID">Sve plaćeno (Račun / Online)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="co-tariff-select">Tarifa</label>
+                <select id="co-tariff-select">
+                  <option value="DAY">Dnevna tarifa</option>
+                  <option value="NIGHT">Noćna tarifa</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="co-order-notes">Napomena za kurira / dispečera</label>
+              <textarea id="co-order-notes" rows="2" placeholder="Sprat, interfon, šifra, opis paketa..."></textarea>
+            </div>
+
+            <div id="co-order-feedback" class="form-feedback hidden"></div>
+
+            <button id="btn-co-submit-order" type="submit" class="btn btn-primary btn-lg">
+              📨 Pošalji porudžbinu dispečeru
+            </button>
+          </form>
+        </div>
+
+        <!-- Right Column: Orders Status & Live ETA -->
+        <div class="co-card co-orders-panel">
+          <div class="co-card-header orders-header-row">
+            <div>
+              <h2>🚚 Praćenje porudžbina i ETA</h2>
+              <p class="muted small">Status i procena dolaska kurira osvežavaju se uživo.</p>
+            </div>
+            <div class="tabs-row">
+              <button id="tab-co-active" type="button" class="tab-btn active">Aktivne (<span id="co-active-count">0</span>)</button>
+              <button id="tab-co-history" type="button" class="tab-btn">Istorija (<span id="co-history-count">0</span>)</button>
+            </div>
+          </div>
+
+          <div class="orders-filters">
+            <div class="orders-filters-grid">
+              <input id="co-filter-search" type="search" placeholder="Pretraga (#broj, adresa, telefon, kurir...)" />
+              <select id="co-filter-branch">
+                <option value="">Sve filijale</option>
+              </select>
+              <select id="co-filter-status">
+                <option value="">Svi statusi</option>
+                <option value="WAITING">Čeka dodelu</option>
+                <option value="IN_PROGRESS">U toku / kod kurira</option>
+                <option value="COMPLETED">Dostavljeno</option>
+                <option value="CANCELLED">Otkazano</option>
+              </select>
+              <select id="co-filter-date">
+                <option value="all">Sav period</option>
+                <option value="today">Danas</option>
+                <option value="yesterday">Juče</option>
+                <option value="7d">Poslednjih 7 dana</option>
+                <option value="30d">Poslednjih 30 dana</option>
+              </select>
+            </div>
+            <div class="filter-summary-row">
+              <span id="co-filter-summary" class="muted small"></span>
+              <button id="btn-co-filter-reset" type="button" class="btn btn-xs btn-secondary hidden">Resetuj filtere</button>
+            </div>
+          </div>
+
+          <div id="co-orders-list" class="orders-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Manage Branches Modal -->
+  <div id="co-branches-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <strong>🏢 Filijale firme</strong>
+        <button id="btn-close-co-branches" type="button" class="btn btn-xs btn-secondary">Zatvori</button>
+      </div>
+      <div class="modal-body">
+        <div id="co-branches-list" class="branches-modal-list"></div>
+        <hr class="divider" />
+        <form id="co-add-branch-form" class="co-form">
+          <strong>+ Dodaj novu filijalu</strong>
+          <div class="grid-2">
+            <div class="field">
+              <label for="new-branch-name">Naziv filijale *</label>
+              <input id="new-branch-name" type="text" placeholder="npr. Liman 2 / Centar" required />
+            </div>
+            <div class="field">
+              <label for="new-branch-phone">Telefon filijale</label>
+              <input id="new-branch-phone" type="tel" placeholder="06x xxx xxxx" />
+            </div>
+          </div>
+          <div class="field autocomplete-field">
+            <label for="new-branch-address">Adresa filijale *</label>
+            <input id="new-branch-address" type="text" placeholder="Ulica i broj, Novi Sad" autocomplete="off" required />
+            <div id="new-branch-suggestions" class="suggestions hidden"></div>
+          </div>
+          <label class="checkbox-row">
+            <input id="new-branch-default" type="checkbox" />
+            <span>Postavi kao podrazumevanu filijalu</span>
+          </label>
+          <div id="new-branch-feedback" class="form-feedback hidden"></div>
+          <button id="btn-save-new-branch" type="submit" class="btn btn-primary btn-sm">Sačuvaj filijalu</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Company Diagnostics / Report Modal -->
+  <div id="co-debug-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <strong>🐞 Prijava greške / debug log</strong>
+        <button id="btn-co-close-debug" type="button" class="btn btn-xs btn-secondary">Zatvori</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="co-debug-category">Kategorija</label>
+          <select id="co-debug-category">
+            <option value="bug">Tehnički problem / bag</option>
+            <option value="eta">Problem sa ETA / pozicijom kurira</option>
+            <option value="address">Problem sa adresom / filijalom</option>
+            <option value="idea">Predlog za poboljšanje</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="co-debug-comment">Opis problema ili komentar *</label>
+          <textarea id="co-debug-comment" rows="3" placeholder="Opišite šta se desilo (npr. za koju porudžbinu ne osvežava ETA, koji korak kasni...)"></textarea>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="co-debug-include-logs" checked />
+          <span>Uključi dijagnostički log (<span id="co-debug-log-count">0</span> zapisa)</span>
+        </label>
+        <pre id="co-debug-log-preview" class="log-preview"></pre>
+        <div id="co-debug-send-status" class="muted small"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-co-copy-debug-log" type="button" class="btn btn-sm btn-secondary">Kopiraj log</button>
+        <button id="btn-co-send-debug-report" type="button" class="btn btn-sm btn-primary">Pošalji izveštaj</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Confirmation Modal -->
+  <div id="co-confirm-order-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <strong>📋 Potvrda porudžbine</strong>
+        <button id="btn-co-close-confirm" type="button" class="btn btn-xs btn-secondary">Zatvori</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted small" style="margin:0">Proverite unete podatke pre slanja dispečerskom centru.</p>
+        <div id="co-confirm-order-body" class="confirm-summary-list"></div>
+        <div id="co-confirm-order-status" class="form-feedback hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-co-confirm-edit" type="button" class="btn btn-sm btn-secondary">✏️ Izmeni</button>
+        <button id="btn-co-confirm-send" type="button" class="btn btn-sm btn-primary">✅ Potvrdi i pošalji</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./company.js"></script>
+</body>
+</html>
